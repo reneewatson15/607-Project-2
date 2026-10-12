@@ -1,0 +1,468 @@
+---
+title: "Data 607 Project 2: Data Transformation"
+author: "Renee Watson"
+date: today
+format:
+  html:
+    toc: true
+    code-fold: true
+    theme: flatly
+execute:
+  echo: true
+  warning: false
+---
+
+# Approach
+
+For this project, I selected three datasets to practice transforming data from wide to tidy format using R. The datasets include simulated monthly patient visits for 15 community health clinics, fictional housing prices across the five New York City boroughs, and life expectancy data from the World Bank. These datasets provide an opportunity to work with different types of data and explore trends in healthcare utilization, housing, and public health. My plan is to import each dataset into R and examine its structure. I will use functions from tidyr and dplyr, to reshape the dataset into tidy format. I will also check for missing values, duplicate records, and inconsistencies in variable types. One challenge I anticipate is handling differences in how the datasets are organized. I will need to identify the appropriate columns to transform and ensure that the resulting variables have the correct data types. After cleaning and transforming the datasets, I plan to perform exploratory data analysis using descriptive statistics and visualizations. I will examine monthly patient visit trends, compare housing values across NYC boroughs, and explore changes in life expectancy across selected countries from 2015 to 2024.
+
+Data Sources: Dataset 1: Community Health Clinic Visits - Simulated monthly patient visit data for 15 community health clinics during 2025 Dataset 2: NYC Housing Prices by Borough - Fictional housing data for the five NYC boroughs from 2024 to 2025, from dicussion board Dataset 3: World Bank Life Expectancy at birth, total(years) - https://data.worldbank.org/indicator/SP.DYN.LE00.IN?name_desc=false
+
+```{r}
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(stringr)
+```
+
+# Dataset 1: Community health clinic visits
+
+This dataset contains simulated monthly patient visit counts for community health clinics during 2025. The purpose of this analysis is to examine how patient visits vary across clinics and months. The original dataset is in wide format, with each month represented by a separate column. 
+
+## Data Import and Tidying
+```{r}
+clinic_wide <- read_csv("data/community_clinic_visits_wide.csv", show_col_types = FALSE)
+dim(clinic_wide)
+names(clinic_wide)
+head(clinic_wide)
+```
+
+The original dataset contains 15 rows and 14 columns. Each row represents one community health clinic, while the columns include clinic ID, clinic name, and monthly patient visit counts from January through December 2025. 
+
+### Transformation
+
+```{r}
+clinic_tidy <- clinic_wide %>%
+  pivot_longer(
+    cols = Jan:Dec,
+    names_to = "month",
+    values_to = "patient_visits"
+  ) %>%
+  rename(clinic_id = Clinic_ID, clinic_name = Clinic_Name) %>%
+  mutate(
+    month = factor(month, levels = month.abb, ordered = TRUE),
+    patient_visits = as.numeric(patient_visits)
+  )
+
+head(clinic_tidy)
+dim(clinic_tidy)
+```
+
+The original dataset contained 15 clinics with monthly patient visits stored in 12 separate columns. I used pivot_longer() to convert these columns into two variables: month and patient visits. I then renamed the clinic identifier variables using lowercase names for consistency and converted the month variable into an ordered factor to preserve chronological order. The resulting dataset contains 180 observations and four variables, with each row representing one clinic in one month. 
+
+```{r}
+colSums(is.na(clinic_tidy))
+
+clinic_tidy %>%
+  filter(is.na(patient_visits))
+
+clinic_tidy %>%
+  count(clinic_id, month) %>%
+  filter(n >1)
+
+clinic_tidy %>% 
+  filter(patient_visits < 0)
+```
+
+I checked the dataset for missing values using is.na(). No missing patient visit counts were identified, so no observations needed to be removed or imputed. I also checked for duplicate clinic month records and negative patient visit counts. No duplicate records or invalid negative values were identified. Therefore, all observations were retained for analysis. 
+
+## Analysis
+
+The analysis used descriptive statistics to examine monthly patient visit trends across the 15 community health clinics. Total and average monthly visits were calculated for each clinic to compare patient visit volumes. Monthly totals were also calculated to examine changes throughout 2025. Finally, the difference between January and December visits was calculated for each clinic to identify which clinics experienced the largest and smallest increases in patient visits. 
+
+### Patient Visits by Clinic
+```{r}
+clinic_summary <- clinic_tidy %>%
+  group_by(clinic_name) %>%
+  summarise(total_visits = sum(patient_visits, na.rm = TRUE),
+            average_monthly_visits = mean(patient_visits, na.rm = TRUE),
+            .groups = "drop") %>%
+  arrange(desc(total_visits))
+clinic_summary
+```
+
+This calculates the total number of patient visits and the average monthly visits for each clinic. The clinics are sorted from highest to lowest total visits. 
+
+### Monthly Patient Visit Trends
+```{r}
+monthly_summary <- clinic_tidy %>%
+  group_by(month) %>%
+  summarise(
+    total_visits = sum(patient_visits, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+monthly_summary
+```
+
+### Change in Patient Visits from January to December
+
+```{r}
+clinic_changes <- clinic_tidy %>%
+  group_by(clinic_name) %>%
+  summarise(
+    january_visits = patient_visits[month == "Jan"],
+    december_visits = patient_visits[month == "Dec"],
+    change_in_visits = december_visits - january_visits, 
+    .groups = "drop"
+  ) %>%
+  arrange(desc(change_in_visits))
+
+clinic_changes
+```
+
+### Visualizations 
+
+```{r}
+ggplot(
+  monthly_summary, aes(x = month, y = total_visits, group = 1)) +
+  geom_line(color = "blue", linewidth = 1) + 
+  geom_point(color = "blue", size = 2) + 
+  labs(title = "Monthly Patient Visits Across Community Health Clinics, 2025",
+       x = "Month",
+       y = "Total Patient Visits") +
+  theme_minimal()
+
+```
+
+This line graph illustrates changes in total monthly patient visits across 15 community health clinics during 2025. Each point represents the combined number of visits across all clinics for a particular month. Total visits decreased slightly from 3,455 in January to 3,413 in February before increasing steadily throughout the remainder of the year. December had the highest number of visits at 4,867. Overall, the graph shows an upward trend in monthly patient visits throughout 2025. 
+```{r}
+ggplot(
+  clinic_tidy, aes(x = month, y = patient_visits, color = clinic_name, group = clinic_name)
+  ) + 
+  geom_line(linewidth = 1) + 
+  geom_point(size = 1.5) + 
+  labs(
+    title = "Monthly Patient Visits by Clinic, 2025", 
+    x = "Month",
+    y = "Number of Patient Visits",
+    color = "Clinic"
+  ) + theme_minimal()
+
+```
+
+This line graph compares monthly patient visits across the 15 community health clinics in 2025. Although patient visit volumes varied between clinics, most showed an overall upward trend throughout 2025, with some monthly fluctuations. Metro Family Health Clinic consistently had the highest number of patient visits, increasing from 320 in January to 440 in December. Eastside Family Clinic had the lowest visit volume, increasing from 155 in January to 230 in December. 
+
+## Conclusions
+
+The analysis showed an overall increase in patient visits across the 15 community health clinics during 2025. Total monthly visits increased from 3,455 in January to 4,867 in December, with February having the lowest number of visits (3,413). Although there were some monthly fluctuations, patient visit volumes generally increased throughout the year. Metro Family Health Clinic had the highest number of visits (4,507), averaging approximately 376 visits per month. In contrast, Eastside Family Clinic had the lowest total (2,319) averaging approximately 193 visits per month. When comparing January and December, all 15 clinics experienced an increase in patient visits. Metro Family Health Clinic had the largest increase with 120 additional visits, while Eastside Family Clinic had the smallest increase, with 75 additional visits. Overall, the findings suggest a consistent upward trend in patient visit volume across the clinics, although the number of visits varied by location. Since this dataset contains simulated patient visit counts, these findings illustrate how data tidying and analysis can be used to examine healthcare utilization patterns rather than representing actual patient activity. 
+
+# Dataset 2: New York housing by borough
+
+This dataset was provided by my classmate and contains fictional average housing prices for the five New York City boroughs from January 2024 through December 2025. The purpose of this analysis is to compare average housing prices across boroughs, examine monthly and yearly trends, and identify which boroughs have the highest and lowest prices. 
+
+## Data Import and Tidying
+
+```{r}
+housing_raw <- read_csv("data/nyc_housing_wide.csv", 
+                        skip = 1,
+                        show_col_types = FALSE,
+                        col_types = cols(.default = col_character()))
+nrow(housing_raw)
+names(housing_raw)
+head(housing_raw)
+```
+
+
+### Transformation
+
+
+```{r}
+housing_tidy <- housing_raw %>%
+  pivot_longer(cols = c(Bronx, Brooklyn, Manhattan, Queens, `Staten Island`),
+               names_to = "borough", values_to = "housing_value") %>%
+  mutate(
+    year = as.integer(Year),
+    month = factor(Month, levels = month.abb, ordered = TRUE),
+    housing_value = parse_number(housing_value)
+  ) %>%
+  select(year, month, borough, housing_value)
+
+head(housing_tidy)
+dim(housing_tidy)
+```
+
+The original dataset contains 24 rows and seven columns, with each row representing a month from 2024 through 2025. I used pivot_longer() to transform the borough columns into two variables: borough and housing value. I also used parse_number() to convert values containing commas into numeric format and converted the year and month variables into appropriate data types. The resulting tidy dataset contains 120 observations and four variables, with each row representing one borough during a particular month and year. 
+
+```{r}
+colSums(is.na(housing_tidy))
+
+housing_tidy %>%
+  count(year, month, borough) %>%
+  filter(n > 1)
+
+housing_tidy %>%
+  filter(housing_value < 0)
+```
+
+I checked the tidy dataset for missing values, duplicate year-month borough records, and negative housing values. No missing values, duplicate records, or negative values were identified. Therefore, all 120 observations were retained for analysis. 
+
+## Analysis
+
+The analysis used descriptive statistics to examine housing price patterns across the five NYC boroughs during 2024 and 2025. Average, minimum, and maximum housing prices were calculated for each borough to compare price difference. Average prices were also calculated by year and month to examine changes over time. Finally, the lowest-priced months were identified for each borough to explore when housing prices were relatively lower. 
+
+### Average Housing Prices by borough
+
+```{r}
+housing_summary <- housing_tidy %>%
+  group_by(borough) %>%
+  summarise(average_price = mean(housing_value, na.rm = TRUE),
+            minimum_price = min(housing_value, na.rm = TRUE),
+            maximum_price = max(housing_value, na.rm = TRUE),
+            .groups = "drop") %>%
+  arrange(desc(average_price))
+housing_summary
+```
+
+I calculated the average, minimum, and maximum housing prices for each borough to compare housing costs across New York City. The boroughs were arranged from highest to lowest average price to identify which areas were the most and least expensive. The results show differences in average housing prices across the five NYC boroughs. Manhattan had the highest average housing price at $1,152.63, followed by Brooklyn at $1,000.08. The Bronx had the lowest average price at $594.63, followed by Queens at $686.83 and Staten Island at $714.50. Manhattan also had the highest maximum price at $1,192, while the Bronx had the lowest minimum price at $565. These findings suggest Manhattan was the most expensive borough and the Bronx was the least expensive during the period examined. 
+
+### Average Housing Prices by Year and Borough 
+
+```{r}
+housing_yearly <- housing_tidy %>%
+  group_by(year, borough) %>%
+  summarise(
+    average_price = mean(housing_value, na.rm = TRUE), 
+    .groups = "drop"
+  ) %>%
+  arrange(borough, year)
+
+housing_yearly
+```
+
+The yearly analysis compares average housing prices across the five NYC boroughs in 2024 and 2025. The results indicate that average housing prices were higher in 2025 than in 2024 across the boroughs. 
+
+### Monthly Housing Price Trends 
+
+```{r}
+housing_monthly <- housing_tidy %>%
+  group_by(year, month) %>%
+  summarise(
+    average_price = mean(housing_value, na.rm = TRUE), 
+    .groups = "drop"
+  ) %>%
+  arrange(year, month)
+
+housing_monthly
+```
+
+```{r}
+housing_lowest_months <- housing_monthly %>%
+  group_by(year) %>%
+  slice_min(average_price, n = 1, with_ties = TRUE) %>%
+  ungroup()
+housing_lowest_months
+```
+
+The monthly analysis showed that average housing prices generally increased across the five NYC boroughs during 2024 and 2025, with some fluctuations. January had the lowest average housing price in both years at $789.20 in 2024 and $830.20 in 2025. These findings suggest that January was the least expensive month overall in each year within the dataset. However, prices may vary by borough, so borough-specific trends should also be examined. 
+
+```{r}
+housing_lowest_by_borough <- housing_tidy %>%
+  group_by(year, borough) %>%
+  slice_min(housing_value, n = 1, with_ties = TRUE) %>%
+  ungroup() %>%
+  select(year, borough, month, housing_value)
+
+housing_lowest_by_borough
+```
+
+The results show that January had the lowest housing prices across all five NYC boroughs in both 2024 and 2025. In 2024, the lowest prices ranged from $565 in the Bronx to $1,108 in Manhattan. In 2025, the lowest prices ranged from $594 in the Bronx to $1,153 in Manhattan. These findings suggest that January may be the most favorable month for finding lower housing prices across the five boroughs. 
+
+### Visualizations
+
+```{r}
+ggplot(
+  housing_monthly, aes(x = month, 
+                       y = average_price, 
+                       color = factor(year),
+                       group = factor(year)) 
+) + 
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) + 
+  labs(
+    title = "Monthly Average Housing Price in NYC, 2024 - 2025",
+    x = "Month",
+    y = "Average Housing Price", 
+    color = "Year"
+  ) + theme_minimal()
+```
+
+The line graph compares monthly average housing prices across the five NYC boroughs in 2024 and 2025. Average housing prices were consistently higher in 2025 than in 2024. Both years showed an overall upward trend, with slight decreases during certain months. January had the lowest average price in both years at $789.20 in 2024 and $830.20 in 2025. December had the highest average price in both years at $827 in 2024 and $865 in 2025.
+
+```{r}
+ggplot(housing_summary, aes(x = reorder(borough, average_price), y = average_price)) + 
+  geom_col(fill = "blue") + 
+  coord_flip() + 
+  labs(
+    title = "Average Housing Prices by NYC Borough, 2024-2025", 
+    x = "Borough",
+    y = "Average Housing Price"
+  ) + theme_minimal()
+```
+
+The bar chart compares average housing prices across the five NYC boroughs during 2024 and 2025. Manhattan had the highest average housing price at $1,152.63, followed by Brooklyn at $1,000.08. The Bronx had the lowest average price at $594.63, followed by Queens at $686.83 and Staten Island at $714.50.
+
+## Conclusions
+
+The analysis showed differences in average housing prices across the five NYC boroughs during 2024 and 2025. Manhattan had the highest average housing price at $1,152.63, followed by Brooklyn at $1,000.08, while the Bronx had the lowest average price at $594.63. Average housing prices were consistently higher in 2025 than in 2024. The monthly analysis also showed that January had the lowest average housing prices in both years. Further examination confirmed that January was the lowest-priced month for all five boroughs in 2024 and 2025. These findings indicate that January had the lowest housing values across all five boroughs in the fictional dataset. 
+
+
+# Dataset 3: World Bank Life Expectancy at Birth 
+
+This dataset was obtained from the World Bank's World Development Indicators database and contains life expectancy at birth estimates for countries and regional groups from 1960 through 2024. Life expectancy is measured in years. The purpose of this analysis is to examine changes in life expectancy over time and compare patterns across selected countries. 
+
+## Data Import and Tidying
+
+```{r}
+life_wide <- read_csv("data/API_SP.DYN.LE00.IN_DS2_en_csv_v2_1528.csv",
+                      skip = 4, 
+                      show_col_types = FALSE)
+
+dim(life_wide)
+names(life_wide)
+head(life_wide)
+
+```
+
+### Transformation
+
+```{r}
+life_tidy <- life_wide %>%
+  filter(`Country Name` %in% c(
+    "United States",
+    "Canada",
+    "Ghana",
+    "Japan"
+  )) %>%
+  pivot_longer(
+    cols = `2015`:`2024`,
+    names_to = "year",
+    values_to = "life_expectancy"
+  ) %>%
+  rename(
+    country = `Country Name`,
+    country_code = `Country Code`
+  ) %>%
+  mutate(
+    year = as.integer(year)
+  ) %>%
+  select(country, country_code, year, life_expectancy)
+
+head(life_tidy)
+dim(life_tidy)
+```
+
+The original World Bank dataset contains 266 rows and 71 columns, with countries and regional groups represented in rows and individual years represented in separate columns. I selected four countries: the United States, Canada, Ghana, and Japan, and restricted the analysis to 2015 through 2024. I used pivot_longer() to transform the year columns into two variables: year and life expectancy. I also converted the year variable to an integer and renamed the country identifier variables for consistency. The resulting dataset contains 40 observations and four variables, with each row representing one country in a particular year. 
+
+```{r}
+colSums(is.na(life_tidy))
+
+life_tidy %>%
+  count(country, year) %>%
+  filter(n >1)
+
+life_tidy %>%
+  filter(life_expectancy <= 0 | life_expectancy > 120)
+```
+
+After transforming the dataset, I checked for missing values, duplicate country-year observations, and invalid life expectancy values. No issues were identified in the selected observations. 
+
+## Analysis
+
+I calculated descriptive statistics for each country and compared life expectancy in 2019 and 2024 to examine changes relative to the pre-pandemic period. 
+
+```{r}
+life_summary <- life_tidy %>%
+  group_by(country) %>%
+  summarise(
+    mean_life = mean(life_expectancy),
+    min_life = min(life_expectancy),
+    max_life = max(life_expectancy),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(mean_life))
+
+life_summary
+```
+
+
+The descriptive analysis revealed differences in life expectancy across the four selected countries from 2015 to 2024. Japan had the highest average life expectancy at 84.15 years, followed by Canada at 81.73 years and the United States at 78.12 years. Ghana had the lowest average life expectancy at 64.42 years. 
+
+```{r}
+life_changes <- life_tidy %>%
+  filter(year %in% c(2019, 2024)) %>%
+  group_by(country) %>%
+  summarise(
+    life_2019 = life_expectancy[year == 2019],
+    life_2024 = life_expectancy[year == 2024],
+    change = life_2024 - life_2019,
+    .groups = "drop"
+  ) %>%
+  arrange(desc(change))
+
+life_changes
+```
+
+Comparing 2019 and 2024, Ghana experienced the largest increase in life expectancy, rising by 1.24 years from 64.46 to 65.70 years. The United States experienced a smaller increase of 0.10 years, from 78.79 to 78.89 years. In contrast, life expectancy declined slightly in Canada by 0.05 years and in Japan by 0.32 years. 
+
+### Visualization
+
+I created a line graph to visualize life expectancy trends across the four countries from 2015 through 2024. 
+
+```{r}
+ggplot(life_tidy, aes(x = year, y = life_expectancy, color = country)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) + 
+  scale_x_continuous(breaks = 2015:2024) +
+  labs(
+    title = "Life Expectancy Trends by Country, 2015-2024",
+    x = "Year",
+    y = "Life Expectancy at Birth (Years)",
+    color = "Country"
+  ) + theme_minimal()
+```
+
+The line graph shows differences in life expectancy trends across the four countries from 2015 to 2024. Japan maintained the highest life expectancy throughout the study period, while Ghana had the lowest. The United States experienced a noticeable decline in life expectancy during 2020 and 2021, followed by a gradual recovery through 2024. Canada experienced smaller fluctuations, while Ghana showed an overall increasing trend. 
+
+```{r}
+ggplot(
+  life_summary, aes(x = reorder(country, mean_life),
+                    y = mean_life,
+                    fill = country)) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = "Average Life Expectancy by Country 2015-2024",
+    x = "Country",
+    y = "Average Life Expectancy (Years)"
+  ) + theme_minimal() + theme(legend.position = "none")
+
+```
+
+The bar chart compares average life expectancy across the four countries. Japan had the highest average at 84.15 years, followed by Canada at 81.73 years and the United States at 78.12 years. Ghana had the lowest average at 64.42 years. 
+
+## Conclusion
+
+This analysis examined life expectancy trends across  the United States, Canada, Ghana, and Japan from 2015 to 2024. The results showed that Japan had the highest average life expectancy at 84.15 years, while Ghana had the lowest at 64.42 years. However, Ghana experienced the largest increase in life expectancy between 2019 and 2024, gaining 1.24 years. The United States experienced a noticeable decline during 2020 and 2021 but recovered by 2024.
+
+Data source: https://data.worldbank.org/indicator/SP.DYN.LE00.IN?name_desc=false 
+
+# Project Conclusion 
+
+This project demonstrated how three datasets in wide format could be transformed into tidy format using R. Through pivot_longer(), data cleaning, descriptive statistics, and visualization, I was able to organize the datasets and examine patterns in clinic visits, housing values, and life expectancy. Although the datasets covered different topics, the same data-tidying techniques made them easier to analyze and interpret. 
+
+
+
+
+
